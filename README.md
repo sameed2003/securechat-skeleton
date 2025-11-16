@@ -63,49 +63,128 @@ securechat-skeleton/
    docker run -d --name securechat-db        -e MYSQL_ROOT_PASSWORD=rootpass        -e MYSQL_DATABASE=securechat        -e MYSQL_USER=scuser        -e MYSQL_PASSWORD=scpass        -p 3306:3306 mysql:8
    ```
 
-4. **Create tables**:
-   ```bash
-   python -m app.storage.db --init
-   ```
+# SecureChat — Project README
 
-5. **Generate certificates** (after implementing the scripts):
-   ```bash
-   python scripts/gen_ca.py --name "FAST-NU Root CA"
-   python scripts/gen_cert.py --cn server.local --out certs/server
-   python scripts/gen_cert.py --cn client.local --out certs/client
-   ```
+This README describes how to set up, run, and test the SecureChat skeleton in this repository. It includes explicit notes about per-file test harnesses and how the database is created locally using the included script (no Docker required).
 
-6. **Run components** (after implementation):
-   ```bash
-   python -m app.server
-   # in another terminal:
-   python -m app.client
-   ```
+Summary:
+- Language: Python 3.10+
+- Dependencies: See `requirements.txt` (cryptography, PyMySQL, python-dotenv, pydantic, rich)
+- Main entry points: `app/server.py`, `app/client.py`
+- Cert tools: `scripts/gen_ca.py`, `scripts/gen_cert.py`
 
-## 🚫 Important Rules
+## Repo layout (short)
+```
+<repo root>
+├─ app/
+│  ├─ client.py
+│  ├─ server.py
+│  ├─ common/
+│  ├─ crypto/
+│  └─ storage/
+├─ scripts/
+├─ certs/
+├─ transcripts/
+├─ requirements.txt
+└─ secrets.json
+```
 
-- **Do not use TLS/SSL or any secure-channel abstraction**  
-  (e.g., `ssl`, HTTPS, WSS, OpenSSL socket wrappers).  
-  All crypto operations must occur **explicitly** at the application layer.
+## 1) Environment (Windows / PowerShell)
 
-- You are **not required** to implement AES, RSA, or DH math, Use any of the available libraries.
-- Do **not commit secrets** (certs, private keys, salts, `.env` values).
-- Your commits must reflect progressive development — at least **10 meaningful commits**.
+Create and activate a virtual environment, then install dependencies:
 
-## 🧾 Deliverables
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-When submitting on Google Classroom (GCR):
+## 2) Secrets / DB credentials
 
-1. A ZIP of your **GitHub fork** (repository).
-2. MySQL schema dump and a few sample records.
-3. Updated **README.md** explaining setup, usage, and test outputs.
-4. `RollNumber-FullName-Report-A02.docx`
-5. `RollNumber-FullName-TestReport-A02.docx`
+- The repo contains a minimal `secrets.json` at the project root with DB credentials used for local testing. The `app/storage/creaate_db.py` script reads from `app/storage/secrets.json` by default — copy the root `secrets.json` to `app/storage/secrets.json` or edit the script to point to the root file before running it.
 
-## 🧪 Test Evidence Checklist
+Do not commit real credentials.
 
-✔ Wireshark capture (encrypted payloads only)  
-✔ Invalid/self-signed cert rejected (`BAD_CERT`)  
-✔ Tamper test → signature verification fails (`SIG_FAIL`)  
-✔ Replay test → rejected by seqno (`REPLAY`)  
-✔ Non-repudiation → exported transcript + signed SessionReceipt verified offline  
+## 3) Generating certificates (local test CA)
+
+Create a local Root CA and then issue server/client certs:
+
+```powershell
+python scripts/gen_ca.py --name "Local Test CA"
+python scripts/gen_cert.py --cn server --ca-key certs/ca.key.pem --ca-cert certs/ca.cert.pem --out certs/server
+python scripts/gen_cert.py --cn client --ca-key certs/ca.key.pem --ca-cert certs/ca.cert.pem --out certs/client
+```
+
+The code expects certs/keys at paths like `certs/client.cert.pem` and `certs/client.key.pem`.
+
+## 4) Initialize the database (local script)
+
+This repository includes a simple script to create the `securechat` database without Docker. The file is `app/storage/creaate_db.py` (note the filename contains a typo in this repo). Run it like this:
+
+```powershell
+python app/storage/creaate_db.py
+```
+
+Notes:
+- The script expects a secrets file at `app/storage/secrets.json`. Copy the repo root `secrets.json` there or adjust the script.
+- `app/storage/db.py` implements the `UserDB` helper and also contains a `__main__` test harness to verify user add/verify behavior (run with `python app/storage/db.py`).
+
+Docker MySQL is optional — only if you prefer running a DB inside a container. The local script suffices for straightforward tests.
+
+## 5) Per-file test harnesses (run individual modules)
+
+Many modules include a `if __name__ == "__main__":` test harness so you can run and validate each component independently. Examples:
+
+```powershell
+python app/crypto/aes.py
+python app/crypto/dh.py
+python app/crypto/pki.py
+python app/crypto/sign.py
+python app/common/protocol.py
+python app/common/utils.py
+python app/storage/transcript.py
+python app/storage/db.py
+python app/client.py
+python app/server.py
+```
+
+These commands exercise the module-level examples and are useful for unit-level sanity checks.
+
+## 6) Run server and client (manual)
+
+Start the server in one terminal:
+
+```powershell
+python app/server.py
+```
+
+Start a client in another terminal:
+
+```powershell
+python app/client.py
+```
+
+The client will prompt for username and password and then allow sending encrypted messages to other connected users.
+
+## 7) Smoke test (run several module mains)
+
+Run a group of quick smoke checks in PowerShell:
+
+```powershell
+&{ python app/crypto/aes.py; python app/crypto/dh.py; python app/crypto/pki.py; python app/crypto/sign.py; python app/common/protocol.py; python app/common/utils.py; python app/storage/db.py }
+```
+
+## 8) Tests / CI
+
+- There is no `pytest` suite included by default. To add unit tests, create a `tests/` folder and run `pytest`.
+
+## 9) Transcripts and evidence
+
+- Runtime transcripts are written to `transcripts/` by `app/storage/transcript.py` (e.g., `transcripts/server.jsonl`). Use these for manual evidence and the assignment checklist in `tests/manual/NOTES.md`.
+
+## 10) Troubleshooting
+
+- If `app/storage/creaate_db.py` fails because it cannot find `app/storage/secrets.json`, copy `secrets.json` into `app/storage/` or edit the script to point to the root `secrets.json`.
+- If the server cannot connect to the DB, verify host/credentials in the secrets file and that MySQL is running locally.
+- If certificates fail to load, verify the expected files exist in `certs/` and names match those used in code.
