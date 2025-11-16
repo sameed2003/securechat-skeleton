@@ -1,9 +1,13 @@
 import mysql.connector
+import json
+
+with open("app/storage/secrets.json", "r") as f:
+    secrets = json.load(f)
 
 db = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="1234",
+    host=secrets["dbhost"],
+    user=secrets["dbuser"],
+    password=secrets["dbpass"],
 )
 
 cursor = db.cursor()
