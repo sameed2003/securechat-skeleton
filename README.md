@@ -1,4 +1,4 @@
-
+## Link of Repo: https://github.com/sameed2003/securechat-skeleton.git
 # SecureChat – Assignment #2 (CS-3002 Information Security, Fall 2025)
 
 This repository is the **official code skeleton** for your Assignment #2.  
