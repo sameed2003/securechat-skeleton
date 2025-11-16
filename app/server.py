@@ -14,6 +14,7 @@ from app.crypto.aes import aes_decrypt
 from app.crypto.dh import dh_generate_keypair, dh_derive_session_key
 from app.storage.db import UserDB
 from app.storage.transcript import Transcript
+import hashlib
 
 # Server configuration
 SERVER_HOST = "0.0.0.0"
@@ -28,7 +29,13 @@ class SecureServer:
         self.sock.listen(5)
         print(f"[+] Server listening on {SERVER_HOST}:{SERVER_PORT}")
 
-        self.db = UserDB()  # adjust credentials if needed
+        with open("secrets.json") as f:
+            secrets = json.load(f)
+
+        self.db = UserDB(user=secrets["dbuser"], password=secrets["dbpass"], host=secrets["dbhost"], database="securechat")
+
+
+        # self.db = UserDB()  # adjust credentials if needed
         self.transcript = Transcript(TRANSCRIPT_FILE)
         self.clients = {}  # username -> (socket, session_key)
 
@@ -72,7 +79,7 @@ class SecureServer:
                 challenge=b64e(challenge_bytes),
                 dh_pub=b64e(server_pub.to_bytes((server_pub.bit_length() + 7)//8, "big"))
             )
-            self.send_json(client_sock, server_hello.dict())
+            self.send_json(client_sock, server_hello.model_dump())
 
             # --- Login ---
             login_msg = Login(**self.recv_json(client_sock))
@@ -83,7 +90,7 @@ class SecureServer:
                 return
 
             # Verify challenge signature
-            pub_key = load_public_key(user_record["public_key"])
+            pub_key = load_public_key('certs/client.cert.pem')
             try:
                 rsa_verify(pub_key, challenge_bytes, b64d(login_msg.signature))
             except ValueError:
@@ -91,11 +98,6 @@ class SecureServer:
                 client_sock.close()
                 return
 
-            # Optional: verify password hash
-            if login_msg.password_hash != user_record["password_hash"]:
-                self.send_json(client_sock, {"status": "error", "reason": "wrong password"})
-                client_sock.close()
-                return
 
             # --- Derive AES session key ---
             client_dh_pub_b64 = login_msg.__dict__.get("dh_pub")
@@ -105,6 +107,19 @@ class SecureServer:
                 session_key = dh_derive_session_key(server_priv, client_pub_int)
             else:
                 session_key = None
+            
+            if session_key is None:
+                self.send_json(client_sock, {"status": "error", "reason": "no session key"})
+                client_sock.close()
+                return
+            
+            # Optional: verify password hash
+            decrypted_password = aes_decrypt(session_key, b64d(login_msg.password)).decode()
+            # print(decrypted_password)
+            if not self.db.verify_user(login_msg.username, decrypted_password):
+                self.send_json(client_sock, {"status": "error", "reason": "wrong password"})
+                client_sock.close()
+                return
 
             # Login successful
             self.send_json(client_sock, {"status": "ok"})

@@ -27,7 +27,9 @@ def load_public_key(path: str):
         # Try loading as a certificate first
         from cryptography import x509
         cert = x509.load_pem_x509_certificate(data)
-        return cert.public_key()
+        pb_key =  cert.public_key()
+        print(pb_key)
+        return pb_key
     except Exception:
         # Fallback: load as plain public key
         return serialization.load_pem_public_key(data)

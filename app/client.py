@@ -3,9 +3,10 @@ Client skeleton — plain TCP; no TLS.
 Uses DH to derive AES-128 session key and encrypts messages.
 """
 
+import base64
 import socket
 import json
-from app.common.protocol import Hello, Login, Msg
+from app.common.protocol import Hello, Login, Msg, ServerHello
 from app.common.utils import now_ms, b64e, b64d
 from app.storage.transcript import Transcript
 from app.crypto.sign import load_private_key, rsa_sign
@@ -58,7 +59,7 @@ class SecureClient:
     def handshake(self):
         """Send Hello and receive ServerHello challenge (with server DH pub key)."""
         hello = Hello(username=self.username)
-        self.send_json(hello.dict())
+        self.send_json(hello.model_dump())
         server_hello = self.recv_json()
         print("[*] Server challenge:", server_hello.get("challenge"))
         return server_hello
@@ -66,14 +67,15 @@ class SecureClient:
     def login(self, password: str, challenge: str):
         """Send Login with password hash and signed challenge."""
         import hashlib
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        sig = rsa_sign(self.priv_key, challenge.encode())
+        # password_hash = hashlib.sha256(password.encode()).hexdigest()
+        password_hash = b64e(aes_encrypt(self.session_key, password.encode()))
+        sig = rsa_sign(self.priv_key, base64.b64decode(challenge))
         login_msg = Login(
             username=self.username,
             password_hash=password_hash,
             signature=b64e(sig)
         )
-        self.send_json(login_msg.dict())
+        self.send_json(login_msg.model_dump())
         resp = self.recv_json()
         print("[*] Login response:", resp)
         return resp
@@ -101,8 +103,8 @@ class SecureClient:
             timestamp=now_ms(),
             ciphertext=b64e(ct_bytes)
         )
-        self.send_json(msg.dict())
-        self.transcript.append(msg.dict())
+        self.send_json(msg.model_dump())
+        self.transcript.append(msg.model_dump())
         print(f"[+] Sent encrypted message to {recipient}")
 
     def receive_message(self, msg_json: dict):
@@ -118,17 +120,17 @@ class SecureClient:
 def main():
     username = input("Username: ")
     password = input("Password: ")
-    key_path = f"certs/{username}.key.pem"
+    key_path = f"certs/client.key.pem"
 
     client = SecureClient(username, key_path)
     client.connect()
     server_hello = client.handshake()
-    client.login(password, server_hello.get("challenge"))
 
     # Example DH session establishment (server_pub should come from ServerHello)
-    server_pub_b64 = server_hello.get("challenge")
+    server_pub_b64 = server_hello.get("dh_pub")
     client_pub = client.establish_session_key(server_pub_b64)
     print(f"[*] Session key established. Client DH pub key: {b64e(client_pub.to_bytes((client_pub.bit_length() + 7)//8, 'big'))}")
+    client.login(password, server_hello.get("challenge"))
 
     try:
         while True:

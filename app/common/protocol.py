@@ -19,6 +19,7 @@ class Hello(BaseModel):
 class ServerHello(BaseModel):
     server_version: str = "1.0"
     challenge: str  # random nonce, base64 string
+    dh_pub: str             # server's DH public key, base64 string
 
 
 # -------------------
