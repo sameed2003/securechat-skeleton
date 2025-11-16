@@ -5,6 +5,7 @@ MySQL users table + salted SHA-256 password hashing.
 import mysql.connector
 from mysql.connector import errorcode
 import os
+import json
 import hashlib
 import secrets
 
@@ -91,7 +92,12 @@ class UserDB:
         return hashlib.sha256((password + salt).encode("utf-8")).hexdigest()
 
 if __name__ == "__main__":
-    db = UserDB(user="root", password="1234", database="securechat")
+
+
+    with open("secrets.json") as f:
+        secrets = json.load(f)
+
+    db = UserDB(user=secrets["dbuser"], password=secrets["dbpass"], host=secrets["dbhost"], database="securechat")
 
     # only un comment to add a new user
     # added = db.add_user("alice", "password123", "PEM_STRING")
